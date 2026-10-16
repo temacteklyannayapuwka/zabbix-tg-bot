@@ -6,7 +6,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from notifications import format_notification
-from zabbix import get_api_version
+from zabbix import get_api_version, get_problems
 
 
 def send_message(token: str, chat_id: str, text: str) -> None:
@@ -38,6 +38,7 @@ def main() -> int:
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("--event", help="Path to a JSON event file")
     actions.add_argument("--check-zabbix", action="store_true", help="Check Zabbix API version")
+    actions.add_argument("--list-problems", action="store_true", help="Print up to 100 unresolved Zabbix problems as JSON")
     parser.add_argument("--dry-run", action="store_true", help="Print without sending")
     args = parser.parse_args()
     if args.check_zabbix:
@@ -49,6 +50,19 @@ def main() -> int:
             print(str(error), file=sys.stderr)
             return 1
         print(f"Zabbix API version: {version}")
+        return 0
+    if args.list_problems:
+        if args.dry_run:
+            parser.error("--list-problems cannot be combined with --dry-run")
+        try:
+            problems = get_problems(
+                os.environ.get("ZABBIX_API_URL", "").strip(),
+                os.environ.get("ZABBIX_API_TOKEN", "").strip(),
+            )
+        except (ValueError, RuntimeError) as error:
+            print(str(error), file=sys.stderr)
+            return 1
+        print(json.dumps(problems, ensure_ascii=False, indent=2))
         return 0
     text = "Zabbix Telegram bot: test notification."
     if args.event:

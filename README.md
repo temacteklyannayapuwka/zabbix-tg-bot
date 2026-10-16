@@ -9,6 +9,7 @@ Python notification tool for forwarding Zabbix problems and recoveries to Telegr
 - Sends one test notification to a configured Telegram chat and exits.
 - Reads credentials from environment variables.
 - Reports missing configuration, network failures and Telegram API errors.
+- Lists up to 100 unresolved trigger problems as JSON, newest event IDs first.
 - Checks Zabbix API connectivity and prints its version without authentication.
 
 ## Run on Linux
@@ -42,7 +43,7 @@ python3 main.py
 
 Only source your own trusted configuration file. The `.env` file is excluded from Git.
 
-A successful run prints `Notification sent.` and delivers a test message. Automatic retrieval of Zabbix events is not implemented.
+A successful run prints `Notification sent.` and delivers a test message. Continuous polling and automatic forwarding of Zabbix events are not implemented.
 
 To preview a local test event without sending it:
 
@@ -62,3 +63,11 @@ python3 main.py --check-zabbix
 ```
 
 This calls the read-only `apiinfo.version` method and prints `Zabbix API version: 7.0.3` for that version. It does not require Telegram credentials or a Zabbix API token, send Telegram messages, or change Zabbix configuration. HTTPS certificates are verified; use a trusted certificate for your server.
+
+To list unresolved problems, set `ZABBIX_API_TOKEN` in your local `.env` to an existing API token with permission to call `problem.get` and read the required hosts. Reload the environment, then run:
+
+```bash
+python3 main.py --list-problems
+```
+
+The command makes one read-only request and prints a JSON array containing event IDs, trigger IDs (`objectid`), names, severity values (0–5), and Unix timestamps (`clock`). It prints `[]` when no problems are visible to that token. The output is limited to the 100 newest unresolved trigger problems and does not include host names. This command does not send Telegram messages or change Zabbix. Use HTTPS to protect the API token in transit. Tokens are sent in the Authorization header and are never printed by the application.
