@@ -9,6 +9,7 @@ Python notification tool for forwarding Zabbix problems and recoveries to Telegr
 - Sends one test notification to a configured Telegram chat and exits.
 - Reads credentials from environment variables.
 - Reports missing configuration, network failures and Telegram API errors.
+- Checks Zabbix API connectivity and prints its version without authentication.
 
 ## Run on Linux
 
@@ -41,7 +42,7 @@ python3 main.py
 
 Only source your own trusted configuration file. The `.env` file is excluded from Git.
 
-A successful run prints `Notification sent.` and delivers a test message. Zabbix connectivity is not implemented.
+A successful run prints `Notification sent.` and delivers a test message. Automatic retrieval of Zabbix events is not implemented.
 
 To preview a local test event without sending it:
 
@@ -53,3 +54,11 @@ python3 main.py --event examples/recovery.json --dry-run
 To send it to the configured chat, omit `--dry-run`.
 
 Run checks with `python3 -m unittest discover -v`.
+
+To check Zabbix API connectivity, set `ZABBIX_API_URL` in `.env` to the full API endpoint, for example `https://zabbix.example.com/zabbix/api_jsonrpc.php`. Reload the environment as shown above, then run:
+
+```bash
+python3 main.py --check-zabbix
+```
+
+This calls the read-only `apiinfo.version` method and prints `Zabbix API version: 7.0.3` for that version. It does not require Telegram credentials or a Zabbix API token, send Telegram messages, or change Zabbix configuration. HTTPS certificates are verified; use a trusted certificate for your server.
