@@ -1,8 +1,11 @@
+import argparse
 import json
 import os
 import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from notifications import format_notification
 
 
 def send_message(token: str, chat_id: str, text: str) -> None:
@@ -30,6 +33,25 @@ def send_message(token: str, chat_id: str, text: str) -> None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--event", help="Path to a JSON event file")
+    parser.add_argument("--dry-run", action="store_true", help="Print without sending")
+    args = parser.parse_args()
+    text = "Zabbix Telegram bot: test notification."
+    if args.event:
+        try:
+            with open(args.event, encoding="utf-8") as source:
+                event = json.load(source)
+            if not isinstance(event, dict):
+                raise ValueError("Event must be a JSON object.")
+            text = format_notification(event)
+        except (OSError, ValueError) as error:
+            print(f"Could not load event: {error}", file=sys.stderr)
+            return 1
+    if args.dry_run:
+        print(text)
+        return 0
+
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
     if not token or not chat_id:
@@ -37,12 +59,12 @@ def main() -> int:
         return 1
 
     try:
-        send_message(token, chat_id, "Zabbix Telegram bot: test notification.")
+        send_message(token, chat_id, text)
     except RuntimeError as error:
         print(str(error), file=sys.stderr)
         return 1
 
-    print("Test notification sent.")
+    print("Notification sent.")
     return 0
 
 

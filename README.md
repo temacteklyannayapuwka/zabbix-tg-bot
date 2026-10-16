@@ -4,6 +4,8 @@ Python notification tool for forwarding Zabbix problems and recoveries to Telegr
 
 ## Current features
 
+- Formats problem notifications from a local JSON event file.
+- Supports previewing messages without network access or credentials.
 - Sends one test notification to a configured Telegram chat and exits.
 - Reads credentials from environment variables.
 - Reports missing configuration, network failures and Telegram API errors.
@@ -39,4 +41,14 @@ python3 main.py
 
 Only source your own trusted configuration file. The `.env` file is excluded from Git.
 
-A successful run prints `Test notification sent.` and delivers a test message. Zabbix connectivity is not implemented.
+A successful run prints `Notification sent.` and delivers a test message. Zabbix connectivity is not implemented.
+
+To preview a local test event without sending it:
+
+```bash
+python3 main.py --event examples/problem.json --dry-run
+```
+
+To send it to the configured chat, omit `--dry-run`.
+
+Run checks with `python3 -m unittest discover -v`.
