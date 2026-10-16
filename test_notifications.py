@@ -16,6 +16,22 @@ class NotificationTests(unittest.TestCase):
         for value in ("🔴 Problem", "TEST-SERVER-01", "Low disk space", "High", "12345", self.event["occurred_at"]):
             self.assertIn(value, text)
 
+    def test_recovery_retains_problem_identity(self):
+        event = {**self.event, "status": "recovery", "recovered_at": "2026-10-16T15:48:00+03:00"}
+        text = format_notification(event)
+        for value in ("✅ Resolved", "Event: 12345", "Recovered: 2026-10-16T15:48:00+03:00"):
+            self.assertIn(value, text)
+
+    def test_invalid_recovery_times_are_rejected(self):
+        for value in (None, "invalid", "2026-10-16T15:48:00", "2026-10-16T15:40:00+03:00"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    format_notification({**self.event, "status": "recovery", "recovered_at": value})
+
+    def test_recovery_compares_timezones(self):
+        text = format_notification({**self.event, "status": "recovery", "recovered_at": "2026-10-16T12:48:00+00:00"})
+        self.assertIn("✅ Resolved", text)
+
     def test_invalid_fields_are_rejected(self):
         for field, value in (("status", "unknown"), ("host", ""), ("severity", 6), ("severity", True), ("occurred_at", "yesterday"), ("occurred_at", "2026-10-16T15:42:00")):
             with self.subTest(field=field, value=value):

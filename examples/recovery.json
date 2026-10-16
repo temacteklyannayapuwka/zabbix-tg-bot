@@ -1,0 +1,9 @@
+{
+  "status": "recovery",
+  "event_id": "12345",
+  "host": "TEST-SERVER-01",
+  "name": "Low disk space",
+  "severity": 4,
+  "occurred_at": "2026-10-16T15:42:00+03:00",
+  "recovered_at": "2026-10-16T15:48:00+03:00"
+}
