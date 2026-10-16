@@ -21,10 +21,13 @@ class ProblemTests(unittest.TestCase):
     def test_problem_request_and_authentication(self):
         body = {"jsonrpc": "2.0", "result": [PROBLEM], "id": 1}
         with patch("zabbix.build_opener") as opener:
-            opener.return_value.open.return_value = io.BytesIO(json.dumps(body).encode())
-            self.assertEqual(get_problems(API_URL, TOKEN), [PROBLEM])
+            opener.return_value.open.side_effect = [
+                io.BytesIO(json.dumps(body).encode()),
+                io.BytesIO(json.dumps({"jsonrpc": "2.0", "result": [], "id": 1}).encode()),
+            ]
+            self.assertEqual(get_problems(API_URL, TOKEN), [{**PROBLEM, "hosts": []}])
         self.assertIsInstance(opener.call_args.args[0], _NoRedirect)
-        call = opener.return_value.open.call_args
+        call = opener.return_value.open.call_args_list[0]
         request = call.args[0]
         self.assertEqual(request.full_url, API_URL)
         self.assertEqual(request.get_header("Authorization"), "Bearer " + TOKEN)

@@ -92,4 +92,40 @@ def get_problems(api_url: str, token: str) -> list[dict]:
                 raise RuntimeError("Zabbix returned an invalid problem.")
         if not isinstance(problem.get("name"), str) or problem.get("severity") not in ("0", "1", "2", "3", "4", "5"):
             raise RuntimeError("Zabbix returned an invalid problem.")
-    return problems
+    if not problems:
+        return []
+    trigger_ids = list(dict.fromkeys(problem["objectid"] for problem in problems))
+    triggers = _api_request(api_url, "trigger.get", {
+        "triggerids": trigger_ids,
+        "output": ["triggerid"],
+        "selectHosts": ["hostid", "host", "name"],
+    }, token)
+    if not isinstance(triggers, list):
+        raise RuntimeError("Zabbix returned an invalid trigger list.")
+    hosts_by_trigger = {}
+    for trigger in triggers:
+        if (
+            not isinstance(trigger, dict)
+            or not isinstance(trigger.get("triggerid"), str)
+            or trigger["triggerid"] not in trigger_ids
+            or trigger["triggerid"] in hosts_by_trigger
+            or not isinstance(trigger.get("hosts"), list)
+        ):
+            raise RuntimeError("Zabbix returned an invalid trigger.")
+        hosts = []
+        for host in trigger["hosts"]:
+            if (
+                not isinstance(host, dict)
+                or not isinstance(host.get("hostid"), str)
+                or not re.fullmatch(r"[0-9]+", host["hostid"])
+                or not isinstance(host.get("host"), str)
+                or not host["host"].strip()
+                or not isinstance(host.get("name"), str)
+            ):
+                raise RuntimeError("Zabbix returned an invalid host.")
+            hosts.append({field: host[field] for field in ("hostid", "host", "name")})
+        hosts_by_trigger[trigger["triggerid"]] = hosts
+    return [
+        {**problem, "hosts": hosts_by_trigger.get(problem["objectid"], [])}
+        for problem in problems
+    ]
