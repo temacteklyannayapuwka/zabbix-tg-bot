@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 SEVERITIES = (
@@ -43,3 +43,36 @@ def format_notification(event: dict) -> str:
     if len(message) > 4096:
         raise ValueError("Notification exceeds 4096 characters.")
     return message
+
+
+def format_zabbix_problem(problem: dict) -> str:
+    if not isinstance(problem, dict):
+        raise ValueError("Zabbix problem must be an object.")
+    for field in ("eventid", "clock", "severity"):
+        value = problem.get(field)
+        if not isinstance(value, str) or not value.isascii() or not value.isdecimal():
+            raise ValueError(f"Zabbix problem {field} must be a numeric string.")
+    try:
+        occurred_at = datetime.fromtimestamp(int(problem["clock"]), timezone.utc).isoformat()
+    except (ValueError, OverflowError, OSError):
+        raise ValueError("Zabbix problem clock is outside the supported date range.") from None
+    hosts = problem.get("hosts")
+    if not isinstance(hosts, list):
+        raise ValueError("Zabbix problem hosts must be an array.")
+    names = []
+    for host in hosts:
+        if not isinstance(host, dict):
+            raise ValueError("Zabbix problem host must be an object.")
+        name = host.get("name")
+        technical_name = host.get("host")
+        if not isinstance(name, str) or not isinstance(technical_name, str) or not technical_name.strip():
+            raise ValueError("Zabbix problem host names are invalid.")
+        names.append(name.strip() or technical_name.strip())
+    return format_notification({
+        "status": "problem",
+        "event_id": problem["eventid"],
+        "host": ", ".join(dict.fromkeys(names)) or "Unknown host",
+        "name": problem.get("name"),
+        "severity": int(problem["severity"]),
+        "occurred_at": occurred_at,
+    })

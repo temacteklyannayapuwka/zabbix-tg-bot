@@ -91,7 +91,7 @@ class ProblemTests(unittest.TestCase):
         self.assertIn("ZABBIX_API_TOKEN", output.getvalue())
 
     def test_cli_rejects_incompatible_options(self):
-        for options in (["--dry-run"], ["--check-zabbix"], ["--event", "examples/problem.json"]):
+        for options in (["--check-zabbix"], ["--event", "examples/problem.json"]):
             with self.subTest(options=options), patch("sys.argv", ["main.py", "--list-problems", *options]), patch("main.get_problems") as fetch, redirect_stderr(io.StringIO()):
                 with self.assertRaises(SystemExit) as error:
                     main()

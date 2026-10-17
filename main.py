@@ -5,7 +5,7 @@ import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from notifications import format_notification
+from notifications import format_notification, format_zabbix_problem
 from zabbix import get_api_version, get_problems
 
 
@@ -52,17 +52,20 @@ def main() -> int:
         print(f"Zabbix API version: {version}")
         return 0
     if args.list_problems:
-        if args.dry_run:
-            parser.error("--list-problems cannot be combined with --dry-run")
         try:
             problems = get_problems(
                 os.environ.get("ZABBIX_API_URL", "").strip(),
                 os.environ.get("ZABBIX_API_TOKEN", "").strip(),
             )
+            if args.dry_run:
+                messages = [format_zabbix_problem(problem) for problem in problems]
         except (ValueError, RuntimeError) as error:
             print(str(error), file=sys.stderr)
             return 1
-        print(json.dumps(problems, ensure_ascii=False, indent=2))
+        if args.dry_run:
+            print("\n\n".join(messages) if messages else "No unresolved problems.")
+        else:
+            print(json.dumps(problems, ensure_ascii=False, indent=2))
         return 0
     text = "Zabbix Telegram bot: test notification."
     if args.event:

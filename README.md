@@ -5,7 +5,8 @@ Python notification tool for forwarding Zabbix problems and recoveries to Telegr
 ## Current features
 
 - Formats problem and recovery notifications from a local JSON event file.
-- Supports previewing messages without network access or credentials.
+- Previews messages from local event files without network access or credentials.
+- Previews Zabbix problems as notification text with UTC timestamps.
 - Sends one test notification to a configured Telegram chat and exits.
 - Reads credentials from environment variables.
 - Reports missing configuration, network failures and Telegram API errors.
@@ -71,3 +72,11 @@ python3 main.py --list-problems
 ```
 
 The command makes a read-only problem request followed by one batched trigger request when problems exist and prints a JSON array containing event IDs, trigger IDs (`objectid`), names, severity values (0–5), and Unix timestamps (`clock`). It prints `[]` when no problems are visible to that token. The output is limited to the 100 newest unresolved trigger problems and includes a `hosts` array with host IDs, technical names (`host`), and display names (`name`). Missing or inaccessible triggers have an empty `hosts` array; their problems remain in the output. This command does not send Telegram messages or change Zabbix. Use HTTPS to protect the API token in transit. Tokens are sent in the Authorization header and are never printed by the application.
+
+To preview current Zabbix problems as notification text:
+
+```bash
+python3 main.py --list-problems --dry-run
+```
+
+This reads Zabbix through the API using the configured URL and token, but does not contact Telegram or require Telegram credentials. Each preview contains the event ID, problem name, severity, UTC time, and host display names (falling back to technical names). Problems without accessible hosts show `Unknown host`. An empty result prints `No unresolved problems.`. Messages longer than 4096 characters produce an error. Without `--dry-run`, `--list-problems` continues to print JSON.
