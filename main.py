@@ -39,6 +39,7 @@ def main() -> int:
     actions.add_argument("--event", help="Path to a JSON event file")
     actions.add_argument("--check-zabbix", action="store_true", help="Check Zabbix API version")
     actions.add_argument("--list-problems", action="store_true", help="Print up to 100 unresolved Zabbix problems as JSON")
+    actions.add_argument("--send-problems", action="store_true", help="Send up to 100 unresolved Zabbix problems to Telegram once")
     parser.add_argument("--dry-run", action="store_true", help="Print without sending")
     args = parser.parse_args()
     if args.check_zabbix:
@@ -51,19 +52,34 @@ def main() -> int:
             return 1
         print(f"Zabbix API version: {version}")
         return 0
-    if args.list_problems:
+    if args.list_problems or args.send_problems:
+        token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+        if args.send_problems and not args.dry_run and (not token or not chat_id):
+            print("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID.", file=sys.stderr)
+            return 1
         try:
             problems = get_problems(
                 os.environ.get("ZABBIX_API_URL", "").strip(),
                 os.environ.get("ZABBIX_API_TOKEN", "").strip(),
             )
-            if args.dry_run:
+            if args.dry_run or args.send_problems:
                 messages = [format_zabbix_problem(problem) for problem in problems]
         except (ValueError, RuntimeError) as error:
             print(str(error), file=sys.stderr)
             return 1
         if args.dry_run:
             print("\n\n".join(messages) if messages else "No unresolved problems.")
+        elif args.send_problems:
+            sent = 0
+            for message in messages:
+                try:
+                    send_message(token, chat_id, message)
+                except RuntimeError as error:
+                    print(f"Delivery stopped after {sent} confirmed notification(s): {error}", file=sys.stderr)
+                    return 1
+                sent += 1
+            print(f"Notifications sent: {sent}.")
         else:
             print(json.dumps(problems, ensure_ascii=False, indent=2))
         return 0

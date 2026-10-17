@@ -8,6 +8,7 @@ Python notification tool for forwarding Zabbix problems and recoveries to Telegr
 - Previews messages from local event files without network access or credentials.
 - Previews Zabbix problems as notification text with UTC timestamps.
 - Sends one test notification to a configured Telegram chat and exits.
+- Sends current Zabbix problems to the configured Telegram chat in one run.
 - Reads credentials from environment variables.
 - Reports missing configuration, network failures and Telegram API errors.
 - Lists up to 100 unresolved trigger problems with their hosts as JSON, newest event IDs first.
@@ -44,7 +45,7 @@ python3 main.py
 
 Only source your own trusted configuration file. The `.env` file is excluded from Git.
 
-A successful run prints `Notification sent.` and delivers a test message. Continuous polling and automatic forwarding of Zabbix events are not implemented.
+A successful run prints `Notification sent.` and delivers a test message. Continuous polling, delivery state, and API recovery notifications are not implemented.
 
 To preview a local test event without sending it:
 
@@ -80,3 +81,12 @@ python3 main.py --list-problems --dry-run
 ```
 
 This reads Zabbix through the API using the configured URL and token, but does not contact Telegram or require Telegram credentials. Each preview contains the event ID, problem name, severity, UTC time, and host display names (falling back to technical names). Problems without accessible hosts show `Unknown host`. An empty result prints `No unresolved problems.`. Messages longer than 4096 characters produce an error. Without `--dry-run`, `--list-problems` continues to print JSON.
+
+To send the current problems to the configured Telegram chat once, load all four variables from `.env` and run:
+
+```bash
+python3 main.py --send-problems --dry-run
+python3 main.py --send-problems
+```
+
+The dry run previews notification text and requires only Zabbix credentials. The send command validates Telegram configuration, fetches up to 100 problems, formats all messages, and sends one message per problem. It exits after printing `Notifications sent: N.`; an empty result sends nothing. On a delivery error it stops with a nonzero exit code and reports the number of confirmed sends. A timeout may occur after Telegram has accepted a message. There are no automatic retries or delivery history: repeating this command can send the same problems again. Use manual runs with test events first.
