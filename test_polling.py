@@ -11,6 +11,11 @@ from test_problem_delivery import ENV, PROBLEM
 
 
 class PollingTests(unittest.TestCase):
+    def setUp(self):
+        recovery_patch = patch("main.get_recoveries", return_value=[])
+        recovery_patch.start()
+        self.addCleanup(recovery_patch.stop)
+
     def test_cycles_run_then_wait(self):
         operations = Mock()
         operations.cycle.side_effect = [0, 0]

@@ -22,6 +22,9 @@ ENV = {
 
 class ProblemDeliveryTests(unittest.TestCase):
     def setUp(self):
+        recovery_patch = patch("main.get_recoveries", return_value=[])
+        recovery_patch.start()
+        self.addCleanup(recovery_patch.stop)
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.history_path = self.directory.name + "/delivery.sqlite3"

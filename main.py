@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from notifications import format_notification, format_zabbix_problem
+from notifications import format_notification, format_zabbix_problem, format_zabbix_recovery
 from history import DeliveryHistory
 from polling import run_polling
 from zabbix import get_api_version, get_problems, get_recoveries
@@ -88,10 +88,31 @@ def run_once(args) -> int:
                     for problem, message in zip(problems, messages):
                         if history.send_once(
                             source, chat_id, problem["eventid"],
-                            lambda: send_message(token, chat_id, message),
+                            lambda: send_message(token, chat_id, message), problem=problem,
                         ):
                             sent += 1
-            except RuntimeError as error:
+                    pending = history.pending_problems(source, chat_id)
+                    recovery_messages = []
+                    for offset in range(0, len(pending), 100):
+                        batch = pending[offset:offset + 100]
+                        by_id = {problem["eventid"]: problem for problem in batch}
+                        recoveries = get_recoveries(
+                            source, os.environ.get("ZABBIX_API_TOKEN", "").strip(), list(by_id),
+                        )
+                        for recovery in recoveries:
+                            original = by_id.get(recovery["eventid"])
+                            if original is None:
+                                raise ValueError("Recovery does not match a tracked problem.")
+                            recovery_messages.append((
+                                "recovery:" + recovery["eventid"],
+                                format_zabbix_recovery(original, recovery),
+                            ))
+                    for event_id, message in recovery_messages:
+                        if history.send_once(
+                            source, chat_id, event_id, lambda: send_message(token, chat_id, message),
+                        ):
+                            sent += 1
+            except (ValueError, RuntimeError) as error:
                 print(f"Delivery stopped after {sent} confirmed notification(s): {error}", file=sys.stderr)
                 return 1
             except sqlite3.Error:

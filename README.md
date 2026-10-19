@@ -14,6 +14,7 @@ Python notification tool for forwarding Zabbix problems and recoveries to Telegr
 - Reads credentials from environment variables.
 - Reports missing configuration, network failures and Telegram API errors.
 - Lists up to 100 unresolved trigger problems with their hosts as JSON, newest event IDs first.
+- Sends recovery notifications for tracked, previously delivered problems.
 - Checks recovery references and recovery times for specified problem event IDs.
 - Checks Zabbix API connectivity and prints its version without authentication.
 
@@ -48,7 +49,7 @@ python3 main.py
 
 Only source your own trusted configuration file. The `.env` file is excluded from Git.
 
-A successful run prints `Notification sent.` and delivers a test message. API recovery notifications are not implemented.
+A successful run prints `Notification sent.` and delivers a test message.
 
 To preview a local test event without sending it:
 
@@ -92,11 +93,11 @@ python3 main.py --send-problems --dry-run
 python3 main.py --send-problems
 ```
 
-The dry run previews notification text and requires only Zabbix credentials. It does not open or change delivery history and shows all fetched problems, including previously sent ones. The send command validates Telegram configuration, fetches up to 100 problems, formats all messages, and sends only events without a recorded delivery. It exits after printing `Notifications sent: N.`; an empty result or a fully delivered result sends nothing. On a delivery error it stops with a nonzero exit code and reports the number of confirmed sends in that run. Use manual runs with test events first.
+The dry run previews notification text and requires only Zabbix credentials. It does not open or change delivery history and shows all fetched problems, including previously sent ones. The send command validates Telegram configuration, fetches up to 100 problems, formats all messages, and sends only events without a recorded delivery. It exits after printing `Notifications sent: N.`; an empty current-problem result may still produce recovery notifications for tracked problems. On a delivery error it stops with a nonzero exit code and reports the number of confirmed sends in that run. Use manual runs with test events first.
 
 Delivery history is stored in `delivery.sqlite3` beside `main.py` by default. Set `DELIVERY_HISTORY_PATH` in `.env` to use another persistent file; its parent directory must already exist and be writable. Keep custom history files outside Git. The default database and its journal files are ignored by Git. SQLite is included with Python, so no additional package is required.
 
-Deliveries are keyed by Zabbix API URL, Telegram chat ID, and event ID. The database stores only these identifiers, not bot or API tokens or message text. Use a stable API URL and history path between runs. History applies to `--send-problems` and `--watch`, not local event sends or test messages. Preserve the database: losing it allows old problems to be sent again.
+Deliveries are keyed by Zabbix API URL, Telegram chat ID, and event ID. The database stores these identifiers and snapshots of delivered problems (name, severity, original time, and host data), but no bot or API tokens. Use a stable API URL and history path between runs. History applies to `--send-problems` and `--watch`, not local event sends or test messages. Preserve the database: losing it allows old problems to be sent again.
 
 Each event is recorded immediately after a successful Telegram response. Earlier confirmed events remain recorded if a later send fails. A database lock prevents two processes using the same history file from sending the same event simultaneously; a busy or invalid database causes the command to stop without silently clearing history. A timeout, process crash, or database failure after Telegram accepts a message but before its delivery is saved can still cause a duplicate on the next run. A failed send is not retried automatically, and there is no exactly-once delivery guarantee.
 
@@ -108,7 +109,7 @@ python3 -u main.py --watch
 
 Set `POLL_INTERVAL_SECONDS` in `.env` to an integer from 5 to 86400 (default: 60). The first cycle runs immediately; the interval is measured after each completed cycle, so cycles do not overlap. SQLite history is reused on every cycle and after restarts. Existing unresolved problems without a recorded delivery are sent on the first cycle. Stop with Ctrl+C; the process exits with code 0 and closes database resources.
 
-For continuous preview without Telegram credentials or history changes, use `python3 -u main.py --watch --dry-run`. Preview output includes all current problems on every cycle. Any API, formatting, configuration, delivery, or database error stops polling with a nonzero exit code; there is no automatic retry loop. This mode reads only the 100 newest unresolved problems per cycle: a short-lived problem that starts and resolves between cycles, or an older problem outside that limit, can be missed. Recovery notifications are not generated by polling.
+For continuous preview without Telegram credentials or history changes, use `python3 -u main.py --watch --dry-run`. Preview output includes all current problems on every cycle. Any API, formatting, configuration, delivery, or database error stops polling with a nonzero exit code; there is no automatic retry loop. This mode reads only the 100 newest unresolved problems per cycle: a short-lived problem that starts and resolves between cycles, or an older problem outside that limit, can be missed. Recoveries of tracked, delivered problems are checked separately even when the current-problem list is empty.
 
 To check whether specific problem events have recovered:
 
@@ -116,4 +117,10 @@ To check whether specific problem events have recovered:
 python3 main.py --check-recovery 12345 12346
 ```
 
-This requires `ZABBIX_API_URL`, `ZABBIX_API_TOKEN`, and permission to call `event.get`. Supply 1–100 positive problem event IDs. The command reads those original events, follows their `r_eventid` references, and returns JSON objects containing the original `eventid`, recovery `r_eventid`, and recovery Unix timestamp `r_clock`. It does not infer recovery from a problem disappearing from a list. Unresolved, deleted, inaccessible, or not-yet-visible events are omitted; `[]` means no recovery was confirmed, not that every requested event is still active. No Telegram messages are sent and delivery history is unchanged. Recovery lookup is a manual command; `--watch` still sends only problem notifications.
+This requires `ZABBIX_API_URL`, `ZABBIX_API_TOKEN`, and permission to call `event.get`. Supply 1–100 positive problem event IDs. The command reads those original events, follows their `r_eventid` references, and returns JSON objects containing the original `eventid`, recovery `r_eventid`, and recovery Unix timestamp `r_clock`. It does not infer recovery from a problem disappearing from a list. Unresolved, deleted, inaccessible, or not-yet-visible events are omitted; `[]` means no recovery was confirmed, not that every requested event is still active. No Telegram messages are sent and delivery history is unchanged. This manual lookup is also used internally by `--send-problems` and `--watch` to confirm recoveries of tracked deliveries.
+
+Automatic recovery delivery requires API permission for `event.get` in addition to `problem.get` and `trigger.get`. After problem delivery, each non-preview send cycle checks all tracked problems without a recorded recovery delivery in batches of up to 100 IDs. A confirmed recovery produces a `Resolved` message with the original host, problem, severity, event ID, occurrence time, and recovery time in UTC. `Notifications sent: N.` counts both problem and recovery messages in that cycle.
+
+Recovery messages have separate delivery records and are skipped after successful delivery, including after restart. Failed deliveries remain pending. Problems missing from API responses are retained as pending and do not produce a false recovery. Event retention or lost API permissions can prevent recovery confirmation. Dry-run modes preview only current problem messages and do not read recovery history.
+
+Existing history files are extended automatically with a snapshot table. Previously sent problems that are still fetched acquire a snapshot without being resent. Events already resolved before this upgrade and absent from the current-problem list have no snapshot and are not automatically tracked for recovery. Keep the database private because snapshots include infrastructure details. Existing crash-window duplicate limitations apply to recovery messages too.
