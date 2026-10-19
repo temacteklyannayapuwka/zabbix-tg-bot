@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 
 from notifications import format_notification, format_zabbix_problem
 from history import DeliveryHistory
+from polling import run_polling
 from zabbix import get_api_version, get_problems
 
 
@@ -37,18 +38,8 @@ def send_message(token: str, chat_id: str, text: str) -> None:
         raise RuntimeError("Telegram did not confirm message delivery.")
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    actions = parser.add_mutually_exclusive_group()
-    actions.add_argument("--event", help="Path to a JSON event file")
-    actions.add_argument("--check-zabbix", action="store_true", help="Check Zabbix API version")
-    actions.add_argument("--list-problems", action="store_true", help="Print up to 100 unresolved Zabbix problems as JSON")
-    actions.add_argument("--send-problems", action="store_true", help="Send up to 100 unresolved Zabbix problems to Telegram once")
-    parser.add_argument("--dry-run", action="store_true", help="Print without sending")
-    args = parser.parse_args()
+def run_once(args) -> int:
     if args.check_zabbix:
-        if args.dry_run:
-            parser.error("--check-zabbix cannot be combined with --dry-run")
         try:
             version = get_api_version(os.environ.get("ZABBIX_API_URL", "").strip())
         except (ValueError, RuntimeError) as error:
@@ -127,6 +118,32 @@ def main() -> int:
 
     print("Notification sent.")
     return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument("--event", help="Path to a JSON event file")
+    actions.add_argument("--check-zabbix", action="store_true", help="Check Zabbix API version")
+    actions.add_argument("--list-problems", action="store_true", help="Print up to 100 unresolved Zabbix problems as JSON")
+    actions.add_argument("--send-problems", action="store_true", help="Send up to 100 unresolved Zabbix problems to Telegram once")
+    actions.add_argument("--watch", action="store_true", help="Continuously send unresolved Zabbix problems")
+    parser.add_argument("--dry-run", action="store_true", help="Print without sending")
+    args = parser.parse_args()
+    if args.check_zabbix and args.dry_run:
+        parser.error("--check-zabbix cannot be combined with --dry-run")
+    if not args.watch:
+        return run_once(args)
+    try:
+        interval = int(os.environ.get("POLL_INTERVAL_SECONDS", "60").strip())
+        if not 5 <= interval <= 86400:
+            raise ValueError
+    except ValueError:
+        print("Set POLL_INTERVAL_SECONDS to an integer from 5 to 86400.", file=sys.stderr)
+        return 1
+    args.send_problems = True
+    print(f"Polling Zabbix every {interval} seconds after each cycle. Press Ctrl+C to stop.", flush=True)
+    return run_polling(lambda: run_once(args), interval)
 
 
 if __name__ == "__main__":
