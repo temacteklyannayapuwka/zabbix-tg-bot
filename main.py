@@ -1,11 +1,15 @@
 import argparse
 import json
 import os
+import sqlite3
 import sys
+from contextlib import closing
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from notifications import format_notification, format_zabbix_problem
+from history import DeliveryHistory
 from zabbix import get_api_version, get_problems
 
 
@@ -72,13 +76,24 @@ def main() -> int:
             print("\n\n".join(messages) if messages else "No unresolved problems.")
         elif args.send_problems:
             sent = 0
-            for message in messages:
-                try:
-                    send_message(token, chat_id, message)
-                except RuntimeError as error:
-                    print(f"Delivery stopped after {sent} confirmed notification(s): {error}", file=sys.stderr)
-                    return 1
-                sent += 1
+            try:
+                history_path = os.environ.get("DELIVERY_HISTORY_PATH", "").strip()
+                if not history_path:
+                    history_path = str(Path(__file__).with_name("delivery.sqlite3"))
+                source = os.environ.get("ZABBIX_API_URL", "").strip()
+                with closing(DeliveryHistory(history_path)) as history:
+                    for problem, message in zip(problems, messages):
+                        if history.send_once(
+                            source, chat_id, problem["eventid"],
+                            lambda: send_message(token, chat_id, message),
+                        ):
+                            sent += 1
+            except RuntimeError as error:
+                print(f"Delivery stopped after {sent} confirmed notification(s): {error}", file=sys.stderr)
+                return 1
+            except sqlite3.Error:
+                print("Delivery history is unavailable. Delivery stopped; a message may have been sent before saving failed.", file=sys.stderr)
+                return 1
             print(f"Notifications sent: {sent}.")
         else:
             print(json.dumps(problems, ensure_ascii=False, indent=2))

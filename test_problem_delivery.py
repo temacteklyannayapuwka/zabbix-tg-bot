@@ -1,5 +1,6 @@
 import io
 import unittest
+from tempfile import TemporaryDirectory
 from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import call, patch
 
@@ -20,9 +21,15 @@ ENV = {
 
 
 class ProblemDeliveryTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.history_path = self.directory.name + "/delivery.sqlite3"
+
     def run_delivery(self, problems, env=None, options=None, send_error=None, fetch_error=None):
         output, errors = io.StringIO(), io.StringIO()
-        with patch("sys.argv", ["main.py", "--send-problems", *(options or [])]), patch.dict("os.environ", ENV if env is None else env, clear=True), patch("main.get_problems", return_value=problems, side_effect=fetch_error) as fetch, patch("main.send_message", side_effect=send_error) as send, redirect_stdout(output), redirect_stderr(errors):
+        settings = {**(ENV if env is None else env), "DELIVERY_HISTORY_PATH": self.history_path}
+        with patch("sys.argv", ["main.py", "--send-problems", *(options or [])]), patch.dict("os.environ", settings, clear=True), patch("main.get_problems", return_value=problems, side_effect=fetch_error) as fetch, patch("main.send_message", side_effect=send_error) as send, redirect_stdout(output), redirect_stderr(errors):
             status = main()
         return status, output.getvalue(), errors.getvalue(), fetch, send
 
@@ -87,6 +94,32 @@ class ProblemDeliveryTests(unittest.TestCase):
                 self.assertEqual(error.exception.code, 2)
                 fetch.assert_not_called()
                 send.assert_not_called()
+
+    def test_repeat_run_skips_sent_event(self):
+        self.assertEqual(self.run_delivery([PROBLEM])[0], 0)
+        status, output, errors, _, send = self.run_delivery([PROBLEM])
+        self.assertEqual(status, 0, errors)
+        self.assertEqual(output, "Notifications sent: 0.\n")
+        send.assert_not_called()
+
+    def test_retry_after_partial_failure_only_sends_unsent_event(self):
+        problems = [PROBLEM, {**PROBLEM, "eventid": "12344"}]
+        self.assertEqual(self.run_delivery(problems, send_error=[None, RuntimeError("offline")])[0], 1)
+        status, _, errors, _, send = self.run_delivery(problems)
+        self.assertEqual(status, 0, errors)
+        send.assert_called_once_with(ENV["TELEGRAM_BOT_TOKEN"], "123", format_zabbix_problem(problems[1]))
+
+    def test_dry_run_does_not_create_history(self):
+        from pathlib import Path
+        self.assertEqual(self.run_delivery([PROBLEM], options=["--dry-run"])[0], 0)
+        self.assertFalse(Path(self.history_path).exists())
+
+    def test_unavailable_history_prevents_send(self):
+        self.history_path = self.directory.name + "/missing/history.sqlite3"
+        status, _, errors, _, send = self.run_delivery([PROBLEM])
+        self.assertEqual(status, 1)
+        self.assertIn("history is unavailable", errors)
+        send.assert_not_called()
 
 
 if __name__ == "__main__":

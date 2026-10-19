@@ -207,6 +207,7 @@ tempCodeRunnerFile.py
 
 # Ruff stuff:
 .ruff_cache/
+delivery.sqlite3*
 
 # PyPI configuration file
 .pypirc
