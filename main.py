@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 from notifications import format_notification, format_zabbix_problem
 from history import DeliveryHistory
 from polling import run_polling
-from zabbix import get_api_version, get_problems
+from zabbix import get_api_version, get_problems, get_recoveries
 
 
 def send_message(token: str, chat_id: str, text: str) -> None:
@@ -39,6 +39,18 @@ def send_message(token: str, chat_id: str, text: str) -> None:
 
 
 def run_once(args) -> int:
+    if args.check_recovery:
+        try:
+            recoveries = get_recoveries(
+                os.environ.get("ZABBIX_API_URL", "").strip(),
+                os.environ.get("ZABBIX_API_TOKEN", "").strip(),
+                args.check_recovery,
+            )
+        except (ValueError, RuntimeError) as error:
+            print(str(error), file=sys.stderr)
+            return 1
+        print(json.dumps(recoveries, ensure_ascii=False, indent=2))
+        return 0
     if args.check_zabbix:
         try:
             version = get_api_version(os.environ.get("ZABBIX_API_URL", "").strip())
@@ -128,10 +140,11 @@ def main() -> int:
     actions.add_argument("--list-problems", action="store_true", help="Print up to 100 unresolved Zabbix problems as JSON")
     actions.add_argument("--send-problems", action="store_true", help="Send up to 100 unresolved Zabbix problems to Telegram once")
     actions.add_argument("--watch", action="store_true", help="Continuously send unresolved Zabbix problems")
+    actions.add_argument("--check-recovery", nargs="+", metavar="EVENT_ID", help="Check recovery for up to 100 problem event IDs")
     parser.add_argument("--dry-run", action="store_true", help="Print without sending")
     args = parser.parse_args()
-    if args.check_zabbix and args.dry_run:
-        parser.error("--check-zabbix cannot be combined with --dry-run")
+    if (args.check_zabbix or args.check_recovery) and args.dry_run:
+        parser.error("API check commands cannot be combined with --dry-run")
     if not args.watch:
         return run_once(args)
     try:

@@ -129,3 +129,63 @@ def get_problems(api_url: str, token: str) -> list[dict]:
         {**problem, "hosts": hosts_by_trigger.get(problem["objectid"], [])}
         for problem in problems
     ]
+
+
+def get_recoveries(api_url: str, token: str, event_ids: list[str]) -> list[dict]:
+    if not token or not re.fullmatch(r"[A-Za-z0-9._~-]+", token):
+        raise ValueError("Set ZABBIX_API_TOKEN to a valid API token.")
+    if not event_ids or len(event_ids) > 100 or any(
+        not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]*", value)
+        for value in event_ids
+    ):
+        raise ValueError("Provide between 1 and 100 positive problem event IDs.")
+    event_ids = list(dict.fromkeys(event_ids))
+    events = _api_request(api_url, "event.get", {
+        "eventids": event_ids, "source": 0, "object": 0, "value": 1,
+        "output": ["eventid", "r_eventid", "clock", "value"],
+    }, token)
+    problems = _index_events(events, event_ids, "1")
+    for event in problems.values():
+        if not isinstance(event.get("r_eventid"), str) or not re.fullmatch(r"[0-9]+", event["r_eventid"]):
+            raise RuntimeError("Zabbix returned an invalid recovery reference.")
+    recovery_ids = list(dict.fromkeys(
+        event["r_eventid"] for event in problems.values() if event["r_eventid"] != "0"
+    ))
+    if not recovery_ids:
+        return []
+    events = _api_request(api_url, "event.get", {
+        "eventids": recovery_ids, "source": 0, "object": 0, "value": 0,
+        "output": ["eventid", "clock", "value"],
+    }, token)
+    recoveries = _index_events(events, recovery_ids, "0")
+    result = []
+    for event_id in event_ids:
+        problem = problems.get(event_id)
+        if problem is None:
+            continue
+        recovery = recoveries.get(problem["r_eventid"])
+        if recovery is None:
+            continue
+        if int(recovery["clock"]) < int(problem["clock"]):
+            raise RuntimeError("Zabbix returned recovery before the problem.")
+        result.append({"eventid": event_id, "r_eventid": recovery["eventid"], "r_clock": recovery["clock"]})
+    return result
+
+
+def _index_events(events, requested_ids: list[str], value: str) -> dict:
+    if not isinstance(events, list):
+        raise RuntimeError("Zabbix returned an invalid event list.")
+    result = {}
+    for event in events:
+        if (
+            not isinstance(event, dict)
+            or not isinstance(event.get("eventid"), str)
+            or event["eventid"] not in requested_ids
+            or event["eventid"] in result
+            or event.get("value") != value
+            or not isinstance(event.get("clock"), str)
+            or not re.fullmatch(r"[0-9]+", event["clock"])
+        ):
+            raise RuntimeError("Zabbix returned an invalid event.")
+        result[event["eventid"]] = event
+    return result
