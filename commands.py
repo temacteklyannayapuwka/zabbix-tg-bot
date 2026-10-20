@@ -90,5 +90,15 @@ class CommandListener:
         ):
             return
         text = message.get("text")
-        if isinstance(text, str) and text.split() and text.split()[0] == "/start":
+        if not isinstance(text, str) or not text.split():
+            return
+        command = text.split()[0]
+        if command == "/start":
             self.send(self.token, str(chat_id), "Zabbix notification bot is running. Access granted.")
+        elif command == "/help":
+            self.send(self.token, str(chat_id), (
+                "Available commands:\n"
+                "/start - Confirm access to the bot.\n"
+                "/help - Show this help.\n\n"
+                "Commands are available only to allowed users in private chats."
+            ))

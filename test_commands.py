@@ -52,11 +52,33 @@ class CommandTests(unittest.TestCase):
     def test_noncommands_and_other_updates_are_ignored(self):
         send = Mock()
         listener = CommandListener(TOKEN, {42}, send)
-        for text in (None, "hello", "", "/help", "/start@other_bot"):
+        for text in (None, "hello", "", "/unknown", "/start@other_bot", "/help@other_bot"):
             listener.handle({**UPDATE, "message": {**UPDATE["message"], "text": text}})
         for update in ({}, {"edited_message": UPDATE["message"]}, {"message": {}}, {"message": None}):
             listener.handle(update)
         send.assert_not_called()
+
+    def test_help_lists_available_commands(self):
+        send = Mock()
+        listener = CommandListener(TOKEN, {42}, send)
+        listener.handle({**UPDATE, "message": {**UPDATE["message"], "text": "/help"}})
+        send.assert_called_once()
+        token, chat, text = send.call_args.args
+        self.assertEqual((token, chat), (TOKEN, "42"))
+        self.assertIn("/start -", text)
+        self.assertIn("/help -", text)
+        self.assertNotIn("/ping", text)
+
+    def test_help_is_not_available_to_other_users_or_groups(self):
+        for sender, chat in (
+            ({"id": 99, "is_bot": False}, {"id": 99, "type": "private"}),
+            ({"id": 42, "is_bot": False}, {"id": -100, "type": "group"}),
+        ):
+            with self.subTest(chat=chat):
+                send = Mock()
+                listener = CommandListener(TOKEN, {42}, send)
+                listener.handle({"message": {"from": sender, "chat": chat, "text": "/help"}})
+                send.assert_not_called()
 
     def test_updates_request(self):
         body = {"ok": True, "result": [UPDATE]}
