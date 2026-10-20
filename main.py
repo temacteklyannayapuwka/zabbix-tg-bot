@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import sqlite3
+import ssl
 import sys
 from contextlib import closing
 from pathlib import Path
@@ -12,6 +13,7 @@ from notifications import format_notification, format_zabbix_problem, format_zab
 from history import DeliveryHistory
 from polling import run_polling
 from zabbix import get_api_version, get_problems, get_recoveries
+from errors import TemporaryFailure
 
 
 def send_message(token: str, chat_id: str, text: str) -> None:
@@ -26,11 +28,19 @@ def send_message(token: str, chat_id: str, text: str) -> None:
         with urlopen(request, timeout=15) as response:
             result = json.load(response)
     except HTTPError as error:
+        if error.code in (500, 502, 503, 504):
+            raise TemporaryFailure(f"Telegram returned HTTP {error.code}.") from None
         raise RuntimeError(
             f"Telegram returned HTTP {error.code}. Check the token, chat ID and bot permissions."
         ) from None
-    except (URLError, TimeoutError, OSError):
-        raise RuntimeError("Could not connect to Telegram. Check the network connection.") from None
+    except ssl.SSLCertVerificationError:
+        raise RuntimeError("Telegram TLS certificate verification failed.") from None
+    except URLError as error:
+        if isinstance(error.reason, ssl.SSLCertVerificationError):
+            raise RuntimeError("Telegram TLS certificate verification failed.") from None
+        raise TemporaryFailure("Could not connect to Telegram. Check the network connection.") from None
+    except (TimeoutError, OSError):
+        raise TemporaryFailure("Could not connect to Telegram. Check the network connection.") from None
     except (ValueError, UnicodeError):
         raise RuntimeError("Telegram returned an invalid response.") from None
 
@@ -48,7 +58,7 @@ def run_once(args) -> int:
             )
         except (ValueError, RuntimeError) as error:
             print(str(error), file=sys.stderr)
-            return 1
+            return 2 if isinstance(error, TemporaryFailure) else 1
         print(json.dumps(recoveries, ensure_ascii=False, indent=2))
         return 0
     if args.check_zabbix:
@@ -56,7 +66,7 @@ def run_once(args) -> int:
             version = get_api_version(os.environ.get("ZABBIX_API_URL", "").strip())
         except (ValueError, RuntimeError) as error:
             print(str(error), file=sys.stderr)
-            return 1
+            return 2 if isinstance(error, TemporaryFailure) else 1
         print(f"Zabbix API version: {version}")
         return 0
     if args.list_problems or args.send_problems:
@@ -74,7 +84,7 @@ def run_once(args) -> int:
                 messages = [format_zabbix_problem(problem) for problem in problems]
         except (ValueError, RuntimeError) as error:
             print(str(error), file=sys.stderr)
-            return 1
+            return 2 if isinstance(error, TemporaryFailure) else 1
         if args.dry_run:
             print("\n\n".join(messages) if messages else "No unresolved problems.")
         elif args.send_problems:
@@ -114,7 +124,7 @@ def run_once(args) -> int:
                             sent += 1
             except (ValueError, RuntimeError) as error:
                 print(f"Delivery stopped after {sent} confirmed notification(s): {error}", file=sys.stderr)
-                return 1
+                return 2 if isinstance(error, TemporaryFailure) else 1
             except sqlite3.Error:
                 print("Delivery history is unavailable. Delivery stopped; a message may have been sent before saving failed.", file=sys.stderr)
                 return 1

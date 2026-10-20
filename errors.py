@@ -1,0 +1,2 @@
+class TemporaryFailure(RuntimeError):
+    pass

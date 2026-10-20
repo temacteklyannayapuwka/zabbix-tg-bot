@@ -10,6 +10,7 @@ Python notification tool for forwarding Zabbix problems and recoveries to Telegr
 - Sends one test notification to a configured Telegram chat and exits.
 - Sends current Zabbix problems to the configured Telegram chat in one run.
 - Polls Zabbix continuously at a configurable interval.
+- Retries temporary network and selected HTTP server failures during continuous polling.
 - Remembers confirmed problem deliveries in SQLite and skips them on later send runs.
 - Reads credentials from environment variables.
 - Reports missing configuration, network failures and Telegram API errors.
@@ -99,7 +100,7 @@ Delivery history is stored in `delivery.sqlite3` beside `main.py` by default. Se
 
 Deliveries are keyed by Zabbix API URL, Telegram chat ID, and event ID. The database stores these identifiers and snapshots of delivered problems (name, severity, original time, and host data), but no bot or API tokens. Use a stable API URL and history path between runs. History applies to `--send-problems` and `--watch`, not local event sends or test messages. Preserve the database: losing it allows old problems to be sent again.
 
-Each event is recorded immediately after a successful Telegram response. Earlier confirmed events remain recorded if a later send fails. A database lock prevents two processes using the same history file from sending the same event simultaneously; a busy or invalid database causes the command to stop without silently clearing history. A timeout, process crash, or database failure after Telegram accepts a message but before its delivery is saved can still cause a duplicate on the next run. A failed send is not retried automatically, and there is no exactly-once delivery guarantee.
+Each event is recorded immediately after a successful Telegram response. Earlier confirmed events remain recorded if a later send fails. A database lock prevents two processes using the same history file from sending the same event simultaneously; a busy or invalid database causes the command to stop without silently clearing history. A timeout, process crash, or database failure after Telegram accepts a message but before its delivery is saved can still cause a duplicate on the next run. One-shot commands do not retry failed sends. Continuous polling may retry temporary failures, and there is no exactly-once delivery guarantee.
 
 To continuously poll Zabbix and send unseen current problems:
 
@@ -109,7 +110,7 @@ python3 -u main.py --watch
 
 Set `POLL_INTERVAL_SECONDS` in `.env` to an integer from 5 to 86400 (default: 60). The first cycle runs immediately; the interval is measured after each completed cycle, so cycles do not overlap. SQLite history is reused on every cycle and after restarts. Existing unresolved problems without a recorded delivery are sent on the first cycle. Stop with Ctrl+C; the process exits with code 0 and closes database resources.
 
-For continuous preview without Telegram credentials or history changes, use `python3 -u main.py --watch --dry-run`. Preview output includes all current problems on every cycle. Any API, formatting, configuration, delivery, or database error stops polling with a nonzero exit code; there is no automatic retry loop. This mode reads only the 100 newest unresolved problems per cycle: a short-lived problem that starts and resolves between cycles, or an older problem outside that limit, can be missed. Recoveries of tracked, delivered problems are checked separately even when the current-problem list is empty.
+For continuous preview without Telegram credentials or history changes, use `python3 -u main.py --watch --dry-run`. Preview output includes all current problems on every cycle. Permanent API, formatting, configuration, delivery, and database errors stop polling with a nonzero exit code. Temporary network and selected HTTP server failures use bounded retries. This mode reads only the 100 newest unresolved problems per cycle: a short-lived problem that starts and resolves between cycles, or an older problem outside that limit, can be missed. Recoveries of tracked, delivered problems are checked separately even when the current-problem list is empty.
 
 To check whether specific problem events have recovered:
 
@@ -124,3 +125,7 @@ Automatic recovery delivery requires API permission for `event.get` in addition 
 Recovery messages have separate delivery records and are skipped after successful delivery, including after restart. Failed deliveries remain pending. Problems missing from API responses are retained as pending and do not produce a false recovery. Event retention or lost API permissions can prevent recovery confirmation. Dry-run modes preview only current problem messages and do not read recovery history.
 
 Existing history files are extended automatically with a snapshot table. Previously sent problems that are still fetched acquire a snapshot without being resent. Events already resolved before this upgrade and absent from the current-problem list have no snapshot and are not automatically tracked for recovery. Keep the database private because snapshots include infrastructure details. Existing crash-window duplicate limitations apply to recovery messages too.
+
+In `--watch`, timeouts, connection failures, and HTTP 500/502/503/504 responses from Zabbix or Telegram trigger up to three retries of the send/preview cycle. Delays grow from the configured polling interval to twice and four times that interval, capped at 300 seconds per retry. A successful cycle resets the consecutive-failure counter. A fourth consecutive temporary failure ends polling with exit code 2. Ctrl+C also stops retry waits cleanly.
+
+Authentication/permission errors, certificate-verification failures, HTTP 429, invalid API responses, formatting errors, and SQLite errors are not automatically retried. Fix the cause before restarting. One-shot commands make no retry attempts. Retry logs contain sanitized errors, not response bodies or tokens. Previously confirmed deliveries stay recorded and are skipped on later cycles; a timeout after Telegram accepts a message can still cause duplicate delivery when the cycle retries.

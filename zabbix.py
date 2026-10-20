@@ -1,8 +1,10 @@
 import json
 import re
+import ssl
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
+from errors import TemporaryFailure
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -43,9 +45,17 @@ def _api_request(api_url: str, method: str, params, token: str | None = None):
         with open_request(request, timeout=15) as response:
             result = json.load(response)
     except HTTPError as error:
+        if error.code in (500, 502, 503, 504):
+            raise TemporaryFailure(f"Zabbix returned HTTP {error.code}.") from None
         raise RuntimeError(f"Zabbix returned HTTP {error.code}.") from None
-    except (URLError, TimeoutError, OSError):
-        raise RuntimeError("Could not connect to Zabbix. Check the URL and network.") from None
+    except ssl.SSLCertVerificationError:
+        raise RuntimeError("Zabbix TLS certificate verification failed.") from None
+    except URLError as error:
+        if isinstance(error.reason, ssl.SSLCertVerificationError):
+            raise RuntimeError("Zabbix TLS certificate verification failed.") from None
+        raise TemporaryFailure("Could not connect to Zabbix. Check the URL and network.") from None
+    except (TimeoutError, OSError):
+        raise TemporaryFailure("Could not connect to Zabbix. Check the URL and network.") from None
     except (ValueError, UnicodeError):
         raise RuntimeError("Zabbix returned an invalid JSON response.") from None
 
