@@ -14,6 +14,7 @@ from history import DeliveryHistory
 from polling import run_polling
 from zabbix import get_api_version, get_problems, get_recoveries
 from errors import TemporaryFailure
+from commands import CommandListener, parse_allowed_users
 
 
 def send_message(token: str, chat_id: str, text: str) -> None:
@@ -171,9 +172,24 @@ def main() -> int:
     actions.add_argument("--list-problems", action="store_true", help="Print up to 100 unresolved Zabbix problems as JSON")
     actions.add_argument("--send-problems", action="store_true", help="Send up to 100 unresolved Zabbix problems to Telegram once")
     actions.add_argument("--watch", action="store_true", help="Continuously send unresolved Zabbix problems")
+    actions.add_argument("--listen", action="store_true", help="Listen for private Telegram commands")
     actions.add_argument("--check-recovery", nargs="+", metavar="EVENT_ID", help="Check recovery for up to 100 problem event IDs")
     parser.add_argument("--dry-run", action="store_true", help="Print without sending")
     args = parser.parse_args()
+    if args.listen:
+        if args.dry_run:
+            parser.error("--listen cannot be combined with --dry-run")
+        try:
+            listener = CommandListener(
+                os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(),
+                parse_allowed_users(os.environ.get("TELEGRAM_ALLOWED_USER_IDS", "")),
+                send_message,
+            )
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 1
+        print("Listening for private Telegram commands. Press Ctrl+C to stop.", flush=True)
+        return run_polling(listener.poll, 1)
     if (args.check_zabbix or args.check_recovery) and args.dry_run:
         parser.error("API check commands cannot be combined with --dry-run")
     if not args.watch:

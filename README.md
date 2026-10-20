@@ -4,6 +4,8 @@ Python notification tool for forwarding Zabbix problems and recoveries to Telegr
 
 ## Current features
 
+- Receives `/start` in private chats from explicitly allowed Telegram users.
+
 - Formats problem and recovery notifications from a local JSON event file.
 - Previews messages from local event files without network access or credentials.
 - Previews Zabbix problems as notification text with UTC timestamps.
@@ -129,3 +131,15 @@ Existing history files are extended automatically with a snapshot table. Previou
 In `--watch`, timeouts, connection failures, and HTTP 500/502/503/504 responses from Zabbix or Telegram trigger up to three retries of the send/preview cycle. Delays grow from the configured polling interval to twice and four times that interval, capped at 300 seconds per retry. A successful cycle resets the consecutive-failure counter. A fourth consecutive temporary failure ends polling with exit code 2. Ctrl+C also stops retry waits cleanly.
 
 Authentication/permission errors, certificate-verification failures, HTTP 429, invalid API responses, formatting errors, and SQLite errors are not automatically retried. Fix the cause before restarting. One-shot commands make no retry attempts. Retry logs contain sanitized errors, not response bodies or tokens. Previously confirmed deliveries stay recorded and are skipped on later cycles; a timeout after Telegram accepts a message can still cause duplicate delivery when the cycle retries.
+
+To receive private Telegram commands, set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALLOWED_USER_IDS` in your local `.env`. The latter is a comma-separated list of numeric Telegram user IDs, for example `123456789,987654321`. An empty or invalid list prevents startup. Reload the environment and run:
+
+```bash
+python3 -u main.py --listen
+```
+
+Send `/start` in a private conversation with the bot. Allowed users receive `Zabbix notification bot is running. Access granted.`. Other users, group/channel messages, edited messages, and unsupported commands are ignored. Only the plain `/start` command (optionally followed by arguments) is recognized; username-qualified commands are ignored. Zabbix credentials and `TELEGRAM_CHAT_ID` are not needed for this mode. The reply confirms the command listener is running, not the health of the separate Zabbix monitoring process.
+
+The listener uses outgoing HTTPS long polling with a 25-second Telegram wait and a 35-second socket timeout; no incoming port is required. Run one listener per bot token, and use a bot without an active webhook. The application does not remove webhooks automatically. You can run `--watch` in a separate process alongside `--listen`. Ctrl+C stops the listener. Temporary network errors use the bounded polling retry policy with delays of 1, 2, and 4 seconds; permanent errors stop it.
+
+Update offsets are held in memory and advance only after handling or deliberately ignoring an update. Pending messages may be processed at startup, and a failed reply or restart may result in a repeated `/start` response. Incoming messages and user IDs are not logged or stored by the listener. No additional Python packages are required.
