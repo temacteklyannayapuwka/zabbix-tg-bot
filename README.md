@@ -4,7 +4,7 @@ Python notification tool for forwarding Zabbix problems and recoveries to Telegr
 
 ## Current features
 
-- Receives `/start` and `/help` in private chats from explicitly allowed Telegram users.
+- Receives `/start`, `/help`, and `/ping` in private chats from explicitly allowed Telegram users.
 
 - Formats problem and recovery notifications from a local JSON event file.
 - Previews messages from local event files without network access or credentials.
@@ -138,7 +138,7 @@ To receive private Telegram commands, set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_ALL
 python3 -u main.py --listen
 ```
 
-Send `/start` in a private conversation with the bot. Send `/help` to see the available commands and their purpose. Allowed users receive `Zabbix notification bot is running. Access granted.`. Other users, group/channel messages, edited messages, and unsupported commands are ignored. The plain `/start` and `/help` commands (optionally followed by arguments) are recognized; username-qualified commands are ignored. Zabbix credentials and `TELEGRAM_CHAT_ID` are not needed for this mode. The reply confirms the command listener is running, not the health of the separate Zabbix monitoring process.
+Send `/start` in a private conversation with the bot. Send `/help` to see the available commands and their purpose. Send `/ping` to receive `Pong. Bot connection is working.`. Allowed users receive `Zabbix notification bot is running. Access granted.`. Other users, group/channel messages, edited messages, and unsupported commands are ignored. The plain `/start`, `/help`, and `/ping` commands (optionally followed by arguments) are recognized; username-qualified commands are ignored. Zabbix credentials and `TELEGRAM_CHAT_ID` are not needed for this mode. The reply confirms the command listener is running, not the health of the separate Zabbix monitoring process.
 
 The listener uses outgoing HTTPS long polling with a 25-second Telegram wait and a 35-second socket timeout; no incoming port is required. Run one listener per bot token, and use a bot without an active webhook. The application does not remove webhooks automatically. You can run `--watch` in a separate process alongside `--listen`. Ctrl+C stops the listener. Temporary network errors use the bounded polling retry policy with delays of 1, 2, and 4 seconds; permanent errors stop it.
 

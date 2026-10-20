@@ -52,7 +52,7 @@ class CommandTests(unittest.TestCase):
     def test_noncommands_and_other_updates_are_ignored(self):
         send = Mock()
         listener = CommandListener(TOKEN, {42}, send)
-        for text in (None, "hello", "", "/unknown", "/start@other_bot", "/help@other_bot"):
+        for text in (None, "hello", "", "/unknown", "/start@other_bot", "/help@other_bot", "/ping@other_bot"):
             listener.handle({**UPDATE, "message": {**UPDATE["message"], "text": text}})
         for update in ({}, {"edited_message": UPDATE["message"]}, {"message": {}}, {"message": None}):
             listener.handle(update)
@@ -67,7 +67,29 @@ class CommandTests(unittest.TestCase):
         self.assertEqual((token, chat), (TOKEN, "42"))
         self.assertIn("/start -", text)
         self.assertIn("/help -", text)
-        self.assertNotIn("/ping", text)
+        self.assertIn("/ping -", text)
+
+    def test_ping_replies_without_reading_zabbix(self):
+        send = Mock()
+        with patch("main.get_api_version") as check, patch("main.get_problems") as problems:
+            CommandListener(TOKEN, {42}, send).handle({
+                **UPDATE, "message": {**UPDATE["message"], "text": "/ping"},
+            })
+        send.assert_called_once_with(TOKEN, "42", "Pong. Bot connection is working.")
+        check.assert_not_called()
+        problems.assert_not_called()
+
+    def test_ping_denies_unlisted_users_and_group_chats(self):
+        for user, chat in (
+            ({"id": 99, "is_bot": False}, {"id": 99, "type": "private"}),
+            ({"id": 42, "is_bot": False}, {"id": -100, "type": "group"}),
+        ):
+            with self.subTest(chat=chat):
+                send = Mock()
+                CommandListener(TOKEN, {42}, send).handle({
+                    "message": {"from": user, "chat": chat, "text": "/ping"},
+                })
+                send.assert_not_called()
 
     def test_help_is_not_available_to_other_users_or_groups(self):
         for sender, chat in (

@@ -99,6 +99,9 @@ class CommandListener:
             self.send(self.token, str(chat_id), (
                 "Available commands:\n"
                 "/start - Confirm access to the bot.\n"
-                "/help - Show this help.\n\n"
+                "/help - Show this help.\n"
+                "/ping - Check the bot connection.\n\n"
                 "Commands are available only to allowed users in private chats."
             ))
+        elif command == "/ping":
+            self.send(self.token, str(chat_id), "Pong. Bot connection is working.")
