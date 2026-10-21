@@ -1,5 +1,7 @@
 # zabbix-tg-bot
 
+Version 1.0.0. Print the installed version with `python3 main.py --version`.
+
 Python notification tool for forwarding Zabbix problems and recoveries to Telegram.
 
 ## Current features
@@ -179,3 +181,9 @@ Enabled user services start when the user manager starts, normally at login. To 
 ```bash
 systemctl --user disable --now zabbix-tg-bot@watch.service zabbix-tg-bot@listen.service
 ```
+
+## Validation
+
+Run `python3 -m unittest discover -v` from the repository directory. Version 1.0.0 passes 112 tests on Python 3.12, including a full simulated API-to-Telegram cycle for problem delivery, recovery delivery, and duplicate suppression. The end-to-end test blocks real sockets and uses real SQLite history with simulated HTTP responses. Both service instances pass `systemd-analyze verify deploy/zabbix-tg-bot@watch.service deploy/zabbix-tg-bot@listen.service`.
+
+These checks do not replace a deployment test: live Zabbix/Telegram delivery, systemd startup on your PC, and boot/logout behavior must be verified in your environment with test events before operational use.

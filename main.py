@@ -166,6 +166,7 @@ def run_once(args) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--version", action="version", version=Path(__file__).with_name("VERSION").read_text().strip())
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("--event", help="Path to a JSON event file")
     actions.add_argument("--check-zabbix", action="store_true", help="Check Zabbix API version")
