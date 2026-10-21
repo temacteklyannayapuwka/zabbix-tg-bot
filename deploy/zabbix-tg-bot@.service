@@ -1,0 +1,20 @@
+[Unit]
+Description=Zabbix Telegram bot (%i)
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+WorkingDirectory=%h/.local/share/zabbix-tg-bot
+EnvironmentFile=%h/.config/zabbix-tg-bot/env
+ExecStart=/usr/bin/python3 -u %h/.local/share/zabbix-tg-bot/main.py --%i
+Restart=on-failure
+RestartSec=30
+RestartPreventExitStatus=1
+KillSignal=SIGINT
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

@@ -143,3 +143,39 @@ Send `/start` in a private conversation with the bot. Send `/help` to see the av
 The listener uses outgoing HTTPS long polling with a 25-second Telegram wait and a 35-second socket timeout; no incoming port is required. Run one listener per bot token, and use a bot without an active webhook. The application does not remove webhooks automatically. You can run `--watch` in a separate process alongside `--listen`. Ctrl+C stops the listener. Temporary network errors use the bounded polling retry policy with delays of 1, 2, and 4 seconds; permanent errors stop it.
 
 Update offsets are held in memory and advance only after handling or deliberately ignoring an update. Pending messages may be processed at startup, and a failed reply or restart may result in a repeated `/start` response. Incoming messages and user IDs are not logged or stored by the listener. No additional Python packages are required.
+
+## Run as Linux user services
+
+On a Linux PC with systemd and Python 3.10+, the supplied user-service template runs monitoring and the command listener as two independent processes. For a new installation:
+
+```bash
+mkdir -p "$HOME/.local/share"
+git clone https://github.com/temacteklyannayapuwka/zabbix-tg-bot.git "$HOME/.local/share/zabbix-tg-bot"
+cd "$HOME/.local/share/zabbix-tg-bot"
+install -d -m 700 "$HOME/.config/zabbix-tg-bot" "$HOME/.config/systemd/user"
+install -m 600 .env.example "$HOME/.config/zabbix-tg-bot/env"
+install -m 644 deploy/zabbix-tg-bot@.service "$HOME/.config/systemd/user/"
+```
+
+Fill in the credentials and allowed user IDs in `~/.config/zabbix-tg-bot/env` before starting. The file uses plain `NAME=value` assignments without `export`, shell commands, or variable expansion. Set `DELIVERY_HISTORY_PATH` to an absolute persistent path if changing the default. Before migrating an existing installation, stop its processes and preserve its SQLite history; point the services at that same database to avoid resending old events. Do not overwrite an existing configuration with the example.
+
+After validating test-event delivery and commands manually, enable the services:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now zabbix-tg-bot@watch.service zabbix-tg-bot@listen.service
+systemctl --user status zabbix-tg-bot@watch.service zabbix-tg-bot@listen.service
+journalctl --user -u zabbix-tg-bot@watch.service -u zabbix-tg-bot@listen.service -f
+```
+
+The template expects `/usr/bin/python3` and the checkout at `~/.local/share/zabbix-tg-bot`. Run a single listener for the bot token; stop manually started processes before enabling the services. Database files created by the service are private to the user. Temporary failures exhausted by the application's retry policy cause a service restart after 30 seconds. Exit code 1 (permanent/configuration error) prevents automatic restart. Inspect the journal and correct the cause before restarting. To restart after editing configuration:
+
+```bash
+systemctl --user restart zabbix-tg-bot@watch.service zabbix-tg-bot@listen.service
+```
+
+Enabled user services start when the user manager starts, normally at login. To run from boot and continue after logout, enable lingering for your Linux account with `loginctl enable-linger "$USER"`; your system may require administrator authorization. The PC must stay powered on and connected to Zabbix and Telegram. To stop and disable automatic startup:
+
+```bash
+systemctl --user disable --now zabbix-tg-bot@watch.service zabbix-tg-bot@listen.service
+```
